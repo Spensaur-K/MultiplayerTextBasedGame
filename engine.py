@@ -9,17 +9,18 @@ from re import match
 from functools import partial
 
 INPUT = stdin
-INPUT = open("testsession.game")
+#INPUT = open("testsession.game")
 OUTPUT = stdout
 LOG = stderr
 HEDGES = tuple("the at of a on to by for as so from in are over".split())
 
-class Game:
+class Engine:
     # Map player ids to their entities
     players = dict()
     containers = set()
-    def __init__(self):
+    def __init__(self, playerType):
         self.world = World()
+        self.playerType = playerType
         self.containers.add(self.world)
     def run(self):
         while True:
@@ -42,9 +43,9 @@ class Game:
                 map(lambda cont: cont.resolve_target(player_ent, action, target_text, options),
                     self.containers))
     def new_player(self, id):
-        self.players[id] = Entity()
+        self.players[id] = self.playerType()
         self.players[id].attach(self.world)
-        self.command(id, internal("create_player"), "self", "Person{}".format(id))
+        self.command(id, internal("create_player"), "self", ("Person{}".format(id),))
         
     
 
@@ -74,6 +75,7 @@ class Entity:
     def attach(self, component):
         self.components.append(component)
 
+
 class ActionComponent(metaclass=ABCMeta):
     "Part of entity that can execute an action"
     @abstractmethod
@@ -102,8 +104,17 @@ class World(ActionComponent, Container):
     players = dict()
     def execute_action(self, new_command, client, action, target, options):
         if action == internal("create_player"):
-            print(":::New player created", file=LOG)
+            log("New player created")
             self.players[options[0]] = target
+        if action == "name":
+            name = self.get_name(target)
+            del self.players[name]
+            self.players[options[0]] = target
+            log("Player '{}' changed their name to '{}'".format(name, options[0]))
+    def get_name(self, target):
+        for name, other_target in self.players.items():
+            if target == other_target:
+                return name
 
     def resolve_target(self, from_entity, action, target, options):
         if target == "self":
@@ -111,6 +122,6 @@ class World(ActionComponent, Container):
         if target in self.players:
             return self.players[target]
 
-if __name__ == "__main__":
-    game = Game()
-    game.run()
+def log(*msg, **kwargs):
+    print(":::", end="", file=LOG)
+    print(*msg, **kwargs, file=LOG)
