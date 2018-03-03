@@ -9,26 +9,26 @@ import (
 type Server struct {
 	Port      string
 	CurrentID int
-	sync.Mutex
+	*sync.Mutex
 }
 
 type Client struct {
-	connection net.Conn
+	connection *net.Conn
 	id         int
 }
 
-func newClient(S *Server, C *net.Conn) *client {
+func newClient(S *Server, C *net.Conn) *Client {
 	client := Client{}
 	S.Lock()
 	defer S.Unlock()
 	client.connection = C
 	S.CurrentID++
 	client.id = S.CurrentID
-	return client
+	return &client
 }
 
 func main() {
-	server := Server{"18723"}
+	server := Server{"18723", 0, &sync.Mutex{}}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+server.Port)
 
 	if err != nil {
@@ -46,7 +46,7 @@ func main() {
 			continue
 		}
 
-		go newClient(&server, conn)
+		go newClient(&server, &conn)
 	}
 
 }
