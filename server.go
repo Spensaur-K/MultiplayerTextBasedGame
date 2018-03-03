@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"fmt"
 	"net"
 	"os/exec"
-	"strings"
-	"time"
 )
 
 type Server struct {
@@ -35,19 +33,37 @@ func handleClient(nc *Client) {
 	fmt.Println(string(data))
 }
 
-func garbage() {
-	cmd := exec.Command("python3", "rw.py")
-	cmd.Stdin = strings.NewReader("some input")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-
-	err := cmd.Start()
-
+func readPy(cmd *exec.Cmd) {
+	pipeOut, err := cmd.StdoutPipe()
 	if err != nil {
 		panic(err)
 	}
-	time.Sleep(time.Second)
-	fmt.Printf("stuff %q\n", out.String())
+
+	reader := bufio.NewReader(pipeOut)
+	var data []byte
+
+	go func() {
+		for err == nil {
+			data, _, err = reader.ReadLine()
+			fmt.Printf("stuff: %s\n", string(data))
+		}
+	}()
+}
+
+func garbage() {
+	cmd := exec.Command("python3", "rw.py")
+
+	pipeIn, err := cmd.StdinPipe()
+	if err != nil {
+		panic(err)
+	}
+
+	readPy(cmd)
+	cmd.Start()
+	for x := 0; x < 100; x++ {
+		fmt.Fprintln(pipeIn, x)
+	}
+
 }
 
 func main() {
