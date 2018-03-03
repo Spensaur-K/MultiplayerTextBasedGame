@@ -1,34 +1,58 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net"
-	"sync"
+	"os/exec"
+	"strings"
+	"time"
 )
 
 type Server struct {
 	Port      string
 	CurrentID int
-	sync.Mutex
 }
 
 type Client struct {
-	connection net.Conn
+	connection *net.Conn
 	id         int
 }
 
-func newClient(S *Server, C *net.Conn) *client {
+func newClient(S *Server, C *net.Conn) *Client {
 	client := Client{}
-	S.Lock()
-	defer S.Unlock()
 	client.connection = C
 	S.CurrentID++
 	client.id = S.CurrentID
-	return client
+	return &client
+}
+
+func handleClient(nc *Client) {
+
+	cmd := exec.Command("rw.py")
+	fmt.Fprintln(cmd.Stdout, "Hello World, This is Tobias! & Evan")
+	data, _ := cmd.Output()
+	fmt.Println(string(data))
+}
+
+func garbage() {
+	cmd := exec.Command("python3", "rw.py")
+	cmd.Stdin = strings.NewReader("some input")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	err := cmd.Start()
+
+	if err != nil {
+		panic(err)
+	}
+	time.Sleep(time.Second)
+	fmt.Printf("stuff %q\n", out.String())
 }
 
 func main() {
-	server := Server{"18723"}
+	garbage()
+	server := Server{"18723", 0}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+server.Port)
 
 	if err != nil {
@@ -45,8 +69,8 @@ func main() {
 			fmt.Println("Error accepting: ", err.Error())
 			continue
 		}
-
-		go newClient(&server, conn)
+		nc := newClient(&server, &conn)
+		go handleClient(nc)
 	}
 
 }
