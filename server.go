@@ -3,9 +3,15 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os/exec"
 )
+
+type Game struct {
+	gameInChannel  chan string
+	gameOutChannel chan string
+}
 
 type Server struct {
 	Port      string
@@ -25,49 +31,97 @@ func newClient(S *Server, C *net.Conn) *Client {
 	return &client
 }
 
-func handleClient(nc *Client) {
+func handleClient(nc *Client, game Game) {
+	var fromClientData []byte
+	var err error
 
-	cmd := exec.Command("rw.py")
-	fmt.Fprintln(cmd.Stdout, "Hello World, This is Tobias! & Evan")
-	data, _ := cmd.Output()
-	fmt.Println(string(data))
-}
-
-func readPy(cmd *exec.Cmd) {
-	pipeOut, err := cmd.StdoutPipe()
-	if err != nil {
-		panic(err)
-	}
-
-	reader := bufio.NewReader(pipeOut)
-	var data []byte
+	reader := bufio.NewReader(*nc.connection)
+	writer := bufio.NewWriter(*nc.connection)
 
 	go func() {
 		for err == nil {
-			data, _, err = reader.ReadLine()
-			fmt.Printf("stuff: %s\n", string(data))
+			fromClientData, _, err = reader.ReadLine()
+			game.gameInChannel <- string(fromClientData)
+		}
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	var writeErr error
+	go func() {
+		for writeErr == nil {
+			data := <-game.gameOutChannel
+			_, writeErr = writer.Write([]byte(data))
+			fmt.Println(data)
+		}
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+}
+
+func producer(gameIn io.WriteCloser, inChannel chan string) {
+	var err error
+
+	go func() {
+		for err == nil {
+			fmt.Fprintln(gameIn, <-inChannel)
+
+		}
+		if err != nil {
+			panic(err)
 		}
 	}()
 }
 
-func garbage() {
-	cmd := exec.Command("python3", "rw.py")
+func consumer(reader *bufio.Reader, outChannel chan string) {
+	var data []byte
+	var err error
+
+	go func() {
+		for err == nil {
+			data, _, err = reader.ReadLine()
+			outChannel <- string(data)
+
+		}
+		if err != nil {
+			panic(err)
+		}
+	}()
+}
+
+func bindStdInAndStdOut(name string, arg ...string) (io.WriteCloser, *bufio.Reader) {
+	cmd := exec.Command(name, arg...)
 
 	pipeIn, err := cmd.StdinPipe()
 	if err != nil {
 		panic(err)
 	}
 
-	readPy(cmd)
-	cmd.Start()
-	for x := 0; x < 100; x++ {
-		fmt.Fprintln(pipeIn, x)
+	pipeOut, err := cmd.StdoutPipe()
+	if err != nil {
+		panic(err)
 	}
+
+	readerOut := bufio.NewReader(pipeOut)
+	cmd.Start()
+
+	return pipeIn, readerOut
 
 }
 
 func main() {
-	garbage()
+
+	gameIn, gameOut := bindStdInAndStdOut("python3", "rw.py")
+	gameInChannel := make(chan string)
+	gameOutChannel := make(chan string)
+	producer(gameIn, gameInChannel)
+	consumer(gameOut, gameOutChannel)
+
+	game := Game{gameInChannel, gameOutChannel}
+
 	server := Server{"18723", 0}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+server.Port)
 
@@ -86,7 +140,6 @@ func main() {
 			continue
 		}
 		nc := newClient(&server, &conn)
-		go handleClient(nc)
+		go handleClient(nc, game)
 	}
-
 }
