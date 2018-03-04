@@ -7,12 +7,14 @@ from abc import ABCMeta, abstractmethod
 from sys import stdin, stdout, stderr
 from re import match
 from functools import partial
+from collections import namedtuple
 
 INPUT = stdin
-#INPUT = open("testsession.game")
 OUTPUT = stdout
 LOG = stderr
 HEDGES = tuple("the at of a on to by for as so from in are over".split())
+
+Command = namedtuple("Command", ("action", "target", "options"))
 
 class Engine:
     # Map player ids to their entities
@@ -22,70 +24,79 @@ class Engine:
         self.world = World()
         self.playerType = playerType
         self.containers.add(self.world)
+    
     def run(self):
+        "Execute game loop"
         while True:
-            id, command = get_id(INPUT.readline())
+            id, text = get_id(INPUT.readline())
             if id not in self.players:
                 self.new_player(id)
             try:
-                action, target_text, options = parse_command(command)
-                self.command(id, action, target_text, options)
+                command = parse_command(text)
+                self.execute_command(id, command)
             except:
                 self.write_client(id, "Invalid command")
-    def command(self, id, action, target_text, options):
+    
+    def execute_command(self, id, command):
+        "Execute a command for every matched target"
         player = self.players[id]
-        for target in self.get_targets(player, action, target_text, options):
-            player.invoke((action, target, options), partial(self.write_client, id))
+        for target in self.get_targets(player, command):
+            player.invoke(command, partial(self.write_client, id))
+    
     def write_client(self, id, text):
+        "Write text for client with id"
         OUTPUT.write("{}: {}".format(id, text))
-    def get_targets(self, player_ent, action, target_text, options):
+
+    
+    def get_targets(self, player_ent, command):
+        "Return valid targets for command"
+
         return filter(lambda x: x != None,
-                map(lambda cont: cont.resolve_target(player_ent, action, target_text, options),
+                map(lambda cont: cont.resolve_target(player_ent, command),
                     self.containers))
     def new_player(self, id):
+        "Create and register a new player"
         self.players[id] = self.playerType()
         self.players[id].attach(self.world)
-        self.command(id, internal("create_player"), "self", ("Person{}".format(id),))
-        
-    
+        command = Command(internal("create_player"), "self", ("Person{}".format(id),))
+        self.execute_command(id, command)
+
 
 def parse_command(command):
     "Return the action, target and options parts of the command"
     action, target, *options = filter(lambda c: c not in HEDGES, command.split())
-    return action, target, options
+    return Command(action, target, options)
 
 def get_id(command):
     "Extract player id from command"
     result = match("(^.*):\s*(.*)", command)
     return result[1], result[2]
 
-def test():
-    id, command = get_id("hello: full command here")
-    assert id == "hello"
-    assert command == "full command here"
-
 
 class Entity:
     components = []
-    def invoke(self, command_parts, respond):
+    def invoke(self, command, respond):
+        """Pass command to each of entity's components
+        respond: function to send client text"""
         for component in self.components:
             component.execute_action(
-                lambda action, target, options: self.invoke((action, target, options), respond),
-                respond, *command_parts)
+                lambda command: self.invoke(command, respond),
+                respond, command)
     def attach(self, component):
+        "Attach a action component to entity"
         self.components.append(component)
 
 
 class ActionComponent(metaclass=ABCMeta):
     "Part of entity that can execute an action"
     @abstractmethod
-    def execute_action(self, new_command, client, action, target, options):
+    def execute_action(self, recurse, client, command):
         """
-        new_command(action, target, options): create a new command and issue it to all components
+        new_command(command): create a new command and issue it to all components
         client(text): send text to client
-        action: to perform
-        target: to perform action on
-        options: additional options for action
+        action: to perform (text)
+        target: entity perform action on
+        options: additional options for action (text tuple)
         """
         pass
 
@@ -93,16 +104,21 @@ class Container(metaclass=ABCMeta):
     """Enables actions between entities by resolving targets
     Keeps track of entities"""
     @abstractmethod
-    def resolve_target(self, from_entity, action, target, options):
+    def resolve_target(self, from_entity, command):
+        """Return entity for target in command
+        from_entity: entity that issued command
+        command: Command with target in text form"""
         pass
 
 def internal(cmd):
+    "Format text to be internal"
     return "!${}$!".format(cmd)
 
 class World(ActionComponent, Container):
     "Mapping of player names to their entities"
     players = dict()
-    def execute_action(self, new_command, client, action, target, options):
+    def execute_action(self, recurse, client, command):
+        action, target, options = command
         if action == internal("create_player"):
             log("New player created")
             self.players[options[0]] = target
@@ -111,17 +127,21 @@ class World(ActionComponent, Container):
             del self.players[name]
             self.players[options[0]] = target
             log("Player '{}' changed their name to '{}'".format(name, options[0]))
-    def get_name(self, target):
-        for name, other_target in self.players.items():
-            if target == other_target:
+
+    def get_name(self, entity):
+        "Get the global name for an entity"
+        for name, other_entity in self.players.items():
+            if entity == other_entity:
                 return name
 
-    def resolve_target(self, from_entity, action, target, options):
-        if target == "self":
+    def resolve_target(self, from_entity, command):
+        "Match a players name globally"
+        if command.target == "self":
             return from_entity
-        if target in self.players:
-            return self.players[target]
+        if command.target in self.players:
+            return self.players[command.target]
 
 def log(*msg, **kwargs):
+    "Log to LOG, called like print()"
     print(":::", end="", file=LOG)
     print(*msg, **kwargs, file=LOG)
