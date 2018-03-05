@@ -4,15 +4,10 @@ Perform language parsing and game logic
 """
 
 from abc import ABCMeta, abstractmethod
-from sys import stdin, stdout, stderr
 from re import match
 from functools import partial
 from collections import namedtuple
-
-INPUT = stdin
-OUTPUT = stdout
-LOG = stderr
-HEDGES = tuple("the at of a on to by for as so from in are over".split())
+from util import unique, INPUT, OUTPUT, log, HEDGES
 
 Command = namedtuple("Command", ("action", "target", "options"))
 
@@ -29,13 +24,13 @@ class Engine:
         "Execute game loop"
         while True:
             id, text = get_id(INPUT.readline())
-            if id not in self.players:
-                self.new_player(id)
             try:
-                command = parse_command(text)
-                self.execute_command(id, command)
+                if id not in self.players:
+                    self.new_player(id)
+                    command = parse_command(text)
+                    self.execute_command(id, command)
             except:
-                self.write_client(id, "Invalid command")
+                self.write_client("server", "Invalid command")
     
     def execute_command(self, id, command):
         "Execute a command for every matched target"
@@ -45,15 +40,15 @@ class Engine:
     
     def write_client(self, id, text):
         "Write text for client with id"
-        OUTPUT.write("{}: {}".format(id, text))
+        print("{}: {}\n".format(id, text), file=OUTPUT)
 
     
     def get_targets(self, player_ent, command):
         "Return valid targets for command"
 
         return filter(lambda x: x != None,
-                map(lambda cont: cont.resolve_target(player_ent, command),
-                    self.containers))
+                unique(map(lambda cont: cont.resolve_target(player_ent, command),
+                    self.containers)))
     def new_player(self, id):
         "Create and register a new player"
         self.players[id] = self.playerType()
@@ -118,6 +113,7 @@ class World(ActionComponent, Container):
     "Mapping of player names to their entities"
     players = dict()
     def execute_action(self, recurse, client, command):
+        "Handle global player creation and naming"
         action, target, options = command
         if action == internal("create_player"):
             log("New player created")
@@ -140,8 +136,3 @@ class World(ActionComponent, Container):
             return from_entity
         if command.target in self.players:
             return self.players[command.target]
-
-def log(*msg, **kwargs):
-    "Log to LOG, called like print()"
-    print(":::", end="", file=LOG)
-    print(*msg, **kwargs, file=LOG)
