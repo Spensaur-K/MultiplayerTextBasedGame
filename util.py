@@ -21,5 +21,5 @@ def unique(iterable):
 
 def log(*msg, **kwargs):
     "Log to LOG, called like print()"
-    print(":::", end="", file=LOG)
+    print("::: ", end="", file=LOG)
     print(*msg, **kwargs, file=LOG)

@@ -8,7 +8,7 @@ from util import log
 
 class Player(Entity):
     def __init__(self):
-        pass
+        super().__init__()
 
 class Speech:
     pass
