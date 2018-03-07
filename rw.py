@@ -1,5 +1,4 @@
-
-
+#!/usr/bin/python3
 while True:
     reading = input()
-    print(reading)
+    print(reading + "modified!")
