@@ -6,6 +6,8 @@ import (
 	"io"
 	"net"
 	"os/exec"
+	"strconv"
+	"strings"
 )
 
 type Game struct {
@@ -31,6 +33,11 @@ func newClient(S *Server, C net.Conn) *Client {
 	return &client
 }
 
+func addIDToInput(clientInput []byte, id int) string {
+	input := fmt.Sprintf("%d:%s", id, clientInput)
+	return input
+}
+
 func handleClient(nc *Client, game Game) {
 	var fromClientData []byte
 	var err error
@@ -40,19 +47,10 @@ func handleClient(nc *Client, game Game) {
 	go func() {
 		for err == nil {
 			fromClientData, _, err = reader.ReadLine()
-			game.gameInChannel <- string(fromClientData)
+			pythonInput := addIDToInput(fromClientData, nc.id)
+			game.gameInChannel <- pythonInput
 		}
 		nc.connection.Close()
-	}()
-
-	var writeErr error
-	go func() {
-		for writeErr == nil {
-			data := <-game.gameOutChannel
-			nc.connection.Write([]byte(data))
-		}
-		nc.connection.Close()
-
 	}()
 
 }
@@ -63,10 +61,30 @@ func producer(gameIn io.WriteCloser, inChannel chan string) {
 	go func() {
 		for err == nil {
 			fmt.Fprintln(gameIn, <-inChannel)
-
 		}
 		if err != nil {
 			panic(err)
+		}
+	}()
+}
+
+func findID(pythonOutput string) (int, string) {
+	s := strings.SplitN(pythonOutput, ":", 2)
+	b, err := strconv.Atoi(s[0])
+	if err != nil {
+		fmt.Println("parsing id failed")
+	}
+	return b, s[1]
+}
+
+func handleClientWrites(nc map[int]*Client, game Game) {
+
+	var writeErr error
+	go func() {
+		for writeErr == nil {
+			pythonOutput := <-game.gameOutChannel
+			id, response := findID(pythonOutput)
+			nc[id].connection.Write([]byte(response))
 		}
 	}()
 }
@@ -87,11 +105,6 @@ func consumer(reader *bufio.Reader, outChannel chan string) {
 	}()
 }
 
-//todo
-func handleClientWrites(connectionMap map[int]*Client, game Game) {
-
-}
-
 func bindStdInAndStdOut(name string, arg ...string) (io.WriteCloser, *bufio.Reader) {
 	cmd := exec.Command(name, arg...)
 
@@ -109,7 +122,6 @@ func bindStdInAndStdOut(name string, arg ...string) (io.WriteCloser, *bufio.Read
 	cmd.Start()
 
 	return pipeIn, readerOut
-
 }
 
 func main() {
@@ -117,12 +129,14 @@ func main() {
 	gameIn, gameOut := bindStdInAndStdOut("python3", "rw.py")
 	gameInChannel := make(chan string)
 	gameOutChannel := make(chan string)
+
 	producer(gameIn, gameInChannel)
 	consumer(gameOut, gameOutChannel)
 
 	game := Game{gameInChannel, gameOutChannel}
 	connectionMap := make(map[int]*Client)
 	handleClientWrites(connectionMap, game)
+
 	port := "18723"
 	fmt.Print("Listening on port: ", port)
 	server := Server{port, 0}
