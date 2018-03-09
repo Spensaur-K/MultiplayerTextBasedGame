@@ -19,11 +19,11 @@ type Server struct {
 }
 
 type Client struct {
-	connection *net.Conn
+	connection net.Conn
 	id         int
 }
 
-func newClient(S *Server, C *net.Conn) *Client {
+func newClient(S *Server, C net.Conn) *Client {
 	client := Client{}
 	client.connection = C
 	S.CurrentID++
@@ -35,29 +35,24 @@ func handleClient(nc *Client, game Game) {
 	var fromClientData []byte
 	var err error
 
-	reader := bufio.NewReader(*nc.connection)
-	writer := bufio.NewWriter(*nc.connection)
+	reader := bufio.NewReader(nc.connection)
 
 	go func() {
 		for err == nil {
 			fromClientData, _, err = reader.ReadLine()
 			game.gameInChannel <- string(fromClientData)
 		}
-		if err != nil {
-			panic(err)
-		}
+		nc.connection.Close()
 	}()
 
 	var writeErr error
 	go func() {
 		for writeErr == nil {
 			data := <-game.gameOutChannel
-			_, writeErr = writer.Write([]byte(data))
-			fmt.Println(data)
+			nc.connection.Write([]byte(data))
 		}
-		if err != nil {
-			panic(err)
-		}
+		nc.connection.Close()
+
 	}()
 
 }
@@ -92,6 +87,11 @@ func consumer(reader *bufio.Reader, outChannel chan string) {
 	}()
 }
 
+//todo
+func handleClientWrites(connectionMap map[int]*Client, game Game) {
+
+}
+
 func bindStdInAndStdOut(name string, arg ...string) (io.WriteCloser, *bufio.Reader) {
 	cmd := exec.Command(name, arg...)
 
@@ -114,13 +114,15 @@ func bindStdInAndStdOut(name string, arg ...string) (io.WriteCloser, *bufio.Read
 
 func main() {
 
-	gameIn, gameOut := bindStdInAndStdOut("python3", "rw.py")
+	gameIn, gameOut := bindStdInAndStdOut("python3", "game.py")
 	gameInChannel := make(chan string)
 	gameOutChannel := make(chan string)
 	producer(gameIn, gameInChannel)
 	consumer(gameOut, gameOutChannel)
 
 	game := Game{gameInChannel, gameOutChannel}
+	connectionMap := make(map[int]*Client)
+	handleClientWrites(connectionMap, game)
 
 	server := Server{"18723", 0}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+server.Port)
@@ -135,11 +137,14 @@ func main() {
 
 	for {
 		conn, err := listener.Accept()
+
 		if err != nil {
 			fmt.Println("Error accepting: ", err.Error())
 			continue
 		}
-		nc := newClient(&server, &conn)
+		nc := newClient(&server, conn)
+		connectionMap[nc.id] = nc
+
 		go handleClient(nc, game)
 	}
 }
