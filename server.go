@@ -114,7 +114,7 @@ func bindStdInAndStdOut(name string, arg ...string) (io.WriteCloser, *bufio.Read
 
 func main() {
 
-	gameIn, gameOut := bindStdInAndStdOut("python3", "game.py")
+	gameIn, gameOut := bindStdInAndStdOut("python3", "rw.py")
 	gameInChannel := make(chan string)
 	gameOutChannel := make(chan string)
 	producer(gameIn, gameInChannel)
@@ -123,8 +123,9 @@ func main() {
 	game := Game{gameInChannel, gameOutChannel}
 	connectionMap := make(map[int]*Client)
 	handleClientWrites(connectionMap, game)
-
-	server := Server{"18723", 0}
+	port := "18723"
+	fmt.Print("Listening on port: ", port)
+	server := Server{port, 0}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+server.Port)
 
 	if err != nil {
