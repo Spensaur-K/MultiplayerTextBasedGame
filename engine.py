@@ -13,10 +13,11 @@ Command = namedtuple("Command", ("action", "target", "options"))
 
 class Engine:
     # Map player ids to their entities
-    def __init__(self, PlayerType):
+    def __init__(self, PlayerType, RootContainer):
         self.players = dict()
         self.containers = set()
         self.world = World()
+        self.rootContainer = RootContainer
         self.PlayerType = PlayerType
         self.containers.add(self.world)
 
@@ -56,6 +57,7 @@ class Engine:
         command = Command(internal("create_player"),
                           "self", ("Person{}".format(id),))
         self.execute_command(id, command)
+        self.rootContainer.add_entity(self.players[id])
 
 
 def parse_command(command):
@@ -74,6 +76,7 @@ def get_id(command):
 class Entity:
     def __init__(self):
         self.components = []
+        self.id = -1
 
     def invoke(self, command, respond):
         """Pass command to each of entity's components
@@ -112,6 +115,11 @@ class Container(metaclass=ABCMeta):
         command: Command with target in text form"""
         pass
 
+    @abstractmethod
+    def add_entity(self, entity):
+        """Add entity to container"""
+        pass
+
 
 def internal(cmd):
     "Format text to be internal"
@@ -138,6 +146,9 @@ class World(ActionComponent, Container):
         for name, other_entity in self.players.items():
             if entity == other_entity:
                 return name
+
+    def add_entity(self, entity):
+        raise Exception("Entities must be added to world by engine")
 
     def resolve_target(self, from_entity, command):
         "Match a players name globally"
