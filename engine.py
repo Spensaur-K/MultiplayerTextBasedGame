@@ -69,9 +69,10 @@ def parse_command(command):
 
 def get_id(command):
     "Extract player id from command"
-    result = match("(^.*):\s*(.*)", command)
-    return result[1], result[2]
-
+    result = match("(^.+):\s*(.+)", command)
+    if result == None:
+        return "None", "None"
+    return result.groups(0)[0], result.groups(0)[1]
 
 class Entity:
     def __init__(self):
@@ -83,6 +84,7 @@ class Entity:
         respond: function to send client text"""
         for component in self.components:
             component.execute_action(
+
                 lambda command: self.invoke(command, respond),
                 respond, command)
 
